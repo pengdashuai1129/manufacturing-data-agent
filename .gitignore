@@ -1,0 +1,31 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment variables (contains API keys)
+.env
+
+# 日志文件
+logs/
+
+# app/scripts/eval_recall.py 的向量缓存（bge-m3 现算的 86 个字段向量，纯本地）
+.eval_recall_cache.json
+
+# 临时/残留文件（临时脚本、临时导出）
+# tmp_* 一律忽略：临时脚本能重跑，临时导出（从公司合同 PDF 抽出的文本/JSON/清单）
+# 含真实客户名和金额，绝不能进仓库
+tmp_repo/
+tmp_*
+
+# ── 业务数据：只本地用，绝不进仓库 ──
+# data/ 下是 CSV 数据（含真实客户名、金额），合同/ 下是公司原始钉钉导出单据（机密）。
+# 仓库里只放「表结构」和「列清单」，不放任何一行业务数据。
+data/
+合同/

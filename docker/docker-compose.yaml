@@ -1,0 +1,75 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: p123456
+      MYSQL_USER: hohohoho
+      MYSQL_PASSWORD: p123456
+    ports:
+      - "127.0.0.1:3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./mysql:/docker-entrypoint-initdb.d
+    command: --character-set-server=utf8mb4
+      --collation-server=utf8mb4_general_ci
+
+  elasticsearch:
+    build: ./elasticsearch
+    container_name: elasticsearch
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+    ports:
+      - "127.0.0.1:9200:9200"
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+  kibana:
+    image: kibana:8.19.10
+    container_name: kibana
+    restart: unless-stopped
+    environment:
+      ELASTICSEARCH_HOSTS: http://elasticsearch:9200
+      I18N_LOCALE: zh-CN
+    ports:
+      - "127.0.0.1:5601:5601"
+    depends_on:
+      - elasticsearch
+
+  qdrant:
+    image: qdrant/qdrant:v1.18
+    container_name: qdrant
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+
+  # 召回结果的重排服务（cross-encoder）。默认不参与，因为：
+  #   1. 不启用时 app/clients/rerank_client.py 走确定性的「RRF+词面」兜底打分
+  #   2. 首次启动要拉一个几百 MB 的模型
+  # 想启用：起这个容器，再把 conf/app_config.yaml 里 rerank.enable 改成 true。
+  # 它没有 depends_on 也不被任何服务依赖，起不起都不影响其它服务。
+  #
+  # 注意：BAAI/bge-reranker-v2-m3 是 bge-m3 系列的配套重排模型，与召回用的
+  # 向量模型同源，中文场景下比通用 reranker 更贴。显存吃紧可以换
+  # BAAI/bge-reranker-base（约 1/3 大小，效果略降）。
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.5
+    container_name: reranker
+    restart: unless-stopped
+    command: --model-id BAAI/bge-reranker-v2-m3 --port 8080
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - tei_data:/data
+
+
+volumes:
+  mysql_data:
+  es_data:
+  qdrant_data:
+  tei_data:

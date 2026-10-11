@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>登录 · 制造业数据问答助手</title>
+  <style>
+    
+    :root {
+      --primary: #4f46e5;
+      --primary-dark: #4338ca;
+      --primary-2: #7c3aed;
+      --bg: #eef1f6;
+      --card: #ffffff;
+      --text: #1e293b;
+      --muted: #94a3b8;
+      --border: #e2e8f0;
+      --red: #b91c1c;
+      --red-bg: #fee2e2;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: "Microsoft YaHei", "PingFang SC", -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 380px;
+      background: var(--card);
+      border-radius: 20px;
+      box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+      overflow: hidden;
+    }
+
+    header {
+      padding: 26px 28px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header .logo {
+      width: 42px; height: 42px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.22);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+    }
+    header .title { font-size: 18px; font-weight: 700; line-height: 1.2; }
+    header .subtitle { font-size: 12px; opacity: 0.85; margin-top: 2px; }
+
+    form { padding: 26px 28px 30px; }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 6px;
+      font-weight: 600;
+    }
+
+    input {
+      width: 100%;
+      padding: 11px 13px;
+      margin-bottom: 16px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      font-size: 15px;
+      font-family: inherit;
+      color: var(--text);
+      background: #f8fafc;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--primary);
+      background: #fff;
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      color: #fff;
+      font-size: 15px;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity .15s;
+    }
+    button:hover:not(:disabled) { opacity: .9; }
+    button:disabled { opacity: .55; cursor: not-allowed; }
+
+    .error {
+      display: none;
+      padding: 10px 13px;
+      margin-bottom: 16px;
+      border-radius: 10px;
+      background: var(--red-bg);
+      color: var(--red);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .error.show { display: block; }
+
+    .hint {
+      margin-top: 16px;
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <header>
+      <div class="logo">🏭</div>
+      <div>
+        <div class="title">制造业数据问答助手</div>
+        <div class="subtitle">请使用分配给你的账号登录</div>
+      </div>
+    </header>
+
+    <form id="login-form">
+      <div class="error" id="error"></div>
+
+      <label for="username">用户名</label>
+      
+      <input id="username" name="username" autocomplete="username" autofocus>
+
+      <label for="password">口令</label>
+      <input id="password" name="password" type="password" autocomplete="current-password">
+
+      <button type="submit" id="submit-btn">登 录</button>
+
+      <div class="hint">账号由管理员分配。登录后的数据范围与你的角色一致，查询会留痕。</div>
+    </form>
+  </div>
+
+  <script>
+    const form = document.getElementById('login-form');
+    const errorBox = document.getElementById('error');
+    const submitBtn = document.getElementById('submit-btn');
+
+    function showError(message) {
+      errorBox.textContent = message;
+      errorBox.classList.add('show');
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      errorBox.classList.remove('show');
+
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      if (!username || !password) {
+        showError('请填写用户名和口令');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.textContent = '登录中…';
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+
+        if (response.ok) {
+          location.replace('/');
+          return;
+        }
+
+        let detail = '登录失败';
+        try {
+          const body = await response.json();
+          if (body && body.detail) detail = body.detail;
+        } catch (_) {  }
+        showError(detail);
+      } catch (err) {
+        showError('无法连接服务，请确认后端已启动');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = '登 录';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,63 @@
+logging:
+  file:
+    enable: true
+    level: INFO
+    path: logs
+    rotation: "10 MB"
+    retention: "7 days"
+  console:
+    enable: true
+    level: INFO
+
+db_meta:
+  host: localhost
+  port: 3306
+  user: hohohoho
+  password: p123456
+  database: meta
+
+db_dw:
+  host: localhost
+  port: 3306
+  user: hohohoho
+  password: p123456
+  database: dw
+
+db_app:
+  host: localhost
+  port: 3306
+  user: hohohoho
+  password: p123456
+  database: app
+
+qdrant:
+  host: localhost
+  port: 6333
+  embedding_size: 1024
+
+embedding:
+  host: localhost
+  port: 11434
+  model: bge-m3
+
+es:
+  host: localhost
+  port: 9200
+  index_name: data_agent
+
+llm:
+  model_name: deepseek-chat
+  api_key: ${oc.env:DEEPSEEK_API_KEY}
+  base_url: https://api.deepseek.com/v1
+
+# 召回结果的重排（cross-encoder）。enable=false 时走确定性的词面重排，
+# 起 TEI 容器后把 enable 打开即可切到 cross-encoder，见 docker/docker-compose.yaml。
+rerank:
+  enable: false
+  base_url: http://localhost:8080
+  path: /rerank
+  timeout: 5
+  # 每张表最多保留多少列，0 = 不裁剪（只重排序）。裁剪时主键/外键与
+  # 指标依赖列永远保留，见 app/agent/nodes/rerank_retrieved_info.py。
+  max_columns_per_table: 0
+

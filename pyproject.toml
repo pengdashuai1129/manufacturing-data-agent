@@ -1,0 +1,43 @@
+[project]
+name = "manufacturing-data-agent"
+version = "0.1.0"
+description = "制造业数据问答系统 —— 基于 LangGraph 的 NL2SQL 智能问数助手"
+readme = "README.md"
+authors = [
+    { name = "pengdashuai1129", email = "1150230735@qq.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "asyncmy>=0.2.11",
+    "cryptography>=50.0.0",
+    "elasticsearch[async]>=8,<9",
+    "fastapi[standard]>=0.141.1",
+    "greenlet>=3.5.4",
+    # grpcio 是 qdrant-client 的传递依赖（它本身不限制版本），这里显式钉住。
+    # 原因：grpcio 1.75+ 的 Windows wheel 里 cygrpc.pyd 未做签名，
+    # Win11 的智能应用控制（Smart App Control）会以"未签名的陌生二进制"拦截，
+    # 报 "DLL load failed while importing cygrpc: 应用程序控制策略已阻止此文件"。
+    # 表现为只有 Qdrant 这条链路起不来，MySQL/ES/Ollama 都正常，很容易误判成代码问题。
+    # 1.74.0 及更早版本的二进制可以被放行，功能上对 qdrant-client 完全够用。
+    # 换机器/换系统若不再受 SAC 限制，可以放开这个钉版。
+    "grpcio==1.74.0",
+    "huggingface-hub>=1.26.0",
+    "jieba>=0.42.1",
+    "langchain>=1.3.14",
+    "langchain-deepseek>=1.1.0",
+    "langchain-huggingface>=1.2.2",
+    "langchain-ollama>=1.1.0",
+    "langgraph>=1.2.10",
+    "loguru>=0.7.3",
+    "omegaconf>=2.3.1",
+    "pymysql>=1.2.0",
+    "python-dotenv>=1.2.2",
+    "pyyaml>=6.0.3",
+    "qdrant-client>=1.18.0",
+    "sqlalchemy>=2.0.51",
+    "sqlglot>=30.22.0",
+]
+
+[tool.uv]
+package = false
+

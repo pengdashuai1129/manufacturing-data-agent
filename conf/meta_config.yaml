@@ -1,0 +1,796 @@
+
+
+tables:
+
+
+  - name: fact_quotation
+    role: fact
+    description: >
+      报价单事实表，是接单漏斗的最前端。每行是一条对外报价记录，
+      回答"为什么接不到订单"这个问题 —— 报价状态为「落标」的行，
+      其未成交原因字段就是答案本身。
+      报价状态为「中标」的行会回填合同号（order_id），是报价转合同的钩子。
+      注意：金额按原币种记录（币种字段），跨币种不能直接求和。
+    columns:
+      - name: quotation_id
+        role: primary_key
+        description: 报价单号，主键，唯一标识一次报价。规则 BJ-<业务员首字母>-<四位序号>。
+        alias: [报价单号, 报价单编号, 报价ID]
+        sync: false
+
+      - name: customer_id
+        role: foreign_key
+        description: 客户ID，外键，关联 dim_customer 表。
+        alias: [客户ID, 客户编号]
+        sync: false
+
+      - name: product_id
+        role: foreign_key
+        description: 品号，外键，关联 dim_product 表，指向本次报价的产品。
+        alias: [品号, 产品ID, 商品ID]
+        sync: false
+
+      - name: employee_id
+        role: foreign_key
+        description: 报价业务员ID，外键，关联 dim_employee 表。
+        alias: [业务员ID, 员工ID, 报价员ID]
+        sync: false
+
+      - name: quote_date_id
+        role: foreign_key
+        description: 报价日期，外键，关联 dim_date 表。日期ID格式为 YYYYMMDD。
+        alias: [报价日期, 报价时间, 报价日]
+        sync: false
+
+      - name: currency
+        role: dimension
+        description: 报价币种，如 USD（美元）、CNY（人民币）。跨币种金额不能直接相加。
+        alias: [币种, 货币, 结算币种]
+        sync: true
+
+      - name: quote_quantity
+        role: measure
+        description: 报价数量，本次报价的产品件数（件）。
+        alias: [报价数量, 报价件数]
+        sync: false
+
+      - name: quote_amount
+        role: measure
+        description: 报价金额，本次报价的总金额，按币种字段计价。这是**报价**不是成交额。
+        alias: [报价金额, 报价总额, 报价额, 报价合计]
+        sync: false
+
+      - name: quote_status
+        role: dimension
+        description: 报价状态，取值「中标」「落标」「跟进中」。算中标率时分母只取已结案（中标+落标），不含还在跟的单。
+        alias: [报价状态, 报价结果]
+        sync: true
+
+      - name: lost_reason
+        role: dimension
+        description: 未成交原因，仅落标的报价有值，如「报价偏高」「交期太长」「客户转单」「产品不符」「客户预算取消」。
+        alias: [未成交原因, 落标原因, 丢单原因, 没接到单的原因, 报价失败原因]
+        sync: true
+
+      - name: order_id
+        role: foreign_key
+        description: 中标后回填的销售合同号，外键，关联 fact_order 表。未中标的报价此列为空。
+        alias: [合同号, 订单号, 成交合同号]
+        sync: false
+
+
+  - name: fact_sample
+    role: fact
+    description: >
+      样品单事实表。真实流程是报价谈拢后先下样品单，样品确认后才转正式合同。
+      每行是一条送样记录，包含送样日期、承诺交期、实际寄出日期和延期情况。
+      样品也会延期（工艺问题、车间排产满），这是业务员很苦恼的一件事。
+      转成正式合同的样品会回填合同号，样品转化率就是靠它算的。
+    columns:
+      - name: sample_id
+        role: primary_key
+        description: 样品单号，主键。规则 YP-<品号前两位>-<四位序号>。
+        alias: [样品单号, 送样单号, 样品ID]
+        sync: false
+
+      - name: customer_id
+        role: foreign_key
+        description: 客户ID，外键，关联 dim_customer 表。
+        alias: [客户ID, 客户编号]
+        sync: false
+
+      - name: product_id
+        role: foreign_key
+        description: 品号，外键，关联 dim_product 表。
+        alias: [品号, 产品ID, 商品ID]
+        sync: false
+
+      - name: employee_id
+        role: foreign_key
+        description: 负责业务员ID，外键，关联 dim_employee 表。
+        alias: [业务员ID, 员工ID]
+        sync: false
+
+      - name: sample_date_id
+        role: foreign_key
+        description: 送样日期，外键，关联 dim_date 表。
+        alias: [送样日期, 样品日期, 打样日期]
+        sync: false
+
+      - name: due_date_id
+        role: foreign_key
+        description: 承诺交期，外键，关联 dim_date 表。计算样品延期的基准。
+        alias: [样品承诺交期, 样品交期, 样品应寄日期]
+        sync: false
+
+      - name: done_date_id
+        role: foreign_key
+        description: 实际寄出日期，外键，关联 dim_date 表。未寄出时为空。
+        alias: [实际寄出日期, 样品寄出日期]
+        sync: false
+
+      - name: sample_quantity
+        role: measure
+        description: 样品数量，本次送样的件数（件）。
+        alias: [样品数量, 送样数量]
+        sync: false
+
+      - name: sample_status
+        role: dimension
+        description: 样品状态，取值「制作中」「已寄出」「已确认」「已放弃」。
+        alias: [样品状态, 送样状态]
+        sync: true
+
+      - name: delay_days
+        role: measure
+        description: 样品延期天数 = 实际寄出日期 - 承诺交期。正数表示延期，未寄出的行为空值（求平均时自动跳过）。
+        alias: [样品延期天数, 样品拖期天数, 样品延迟天数]
+        sync: false
+
+      - name: is_on_time
+        role: dimension
+        description: 样品是否准时，取值「准时」「延期」。未寄出时为空。
+        alias: [样品是否准时, 样品准时情况]
+        sync: true
+
+      - name: delay_reason
+        role: dimension
+        description: 样品延期原因，如「工艺问题」「车间排产满」「客户确认慢」。
+        alias: [样品延期原因, 样品拖期原因]
+        sync: true
+
+      - name: order_id
+        role: foreign_key
+        description: 样品转成正式合同后回填的合同号，外键，关联 fact_order 表。为空表示这个样品没转成订单。
+        alias: [样品转成的合同号, 样品对应订单号]
+        sync: false
+
+
+  - name: fact_order
+    role: fact
+    description: >
+      合同头事实表，一行一份销售合同（合同级，不是产品级）。
+      记录接单结果（订单日期、合同性质、币种）和交付表现（承诺交期、实际发货、
+      延期天数、是否准时）。回答"合同数""合同交付及时率""平均延期天数"这类问题
+      都用这张表，**不要**用明细表去数合同，更不能 COUNT(DISTINCT)。
+    columns:
+      - name: order_id
+        role: primary_key
+        description: 销售合同号，主键。规则 <业务员姓名首字母>-<序号>，如 ABC-1000001。
+        alias: [合同号, 销售合同号, 订单号, 合同编号]
+        sync: false
+
+      - name: customer_id
+        role: foreign_key
+        description: 客户ID，外键，关联 dim_customer 表。
+        alias: [客户ID, 客户编号]
+        sync: false
+
+      - name: employee_id
+        role: foreign_key
+        description: 负责业务员ID，外键，关联 dim_employee 表。注意：单据上的"创建人"多为销售内勤，不是负责业务员。
+        alias: [业务员ID, 负责业务员ID, 员工ID]
+        sync: false
+
+      - name: order_date_id
+        role: foreign_key
+        description: 订单日期（下单日期），外键，关联 dim_date 表。
+        alias: [订单日期, 下单日期, 接单日期]
+        sync: false
+
+      - name: ship_date_id
+        role: foreign_key
+        description: 承诺交期，外键，关联 dim_date 表，对应单据上的"生产评审交期"。计算合同延期的基准。
+        alias: [承诺交期, 发货日期, 约定交期, 生产评审交期]
+        sync: false
+
+      - name: actual_ship_date_id
+        role: foreign_key
+        description: 实际发货日期，外键，关联 dim_date 表。未发货的合同此列为空。
+        alias: [实际发货日期, 实际交货日期]
+        sync: false
+
+      - name: currency
+        role: dimension
+        description: 合同币种，如 USD（美元）、CNY（人民币）。内销为 CNY，出口为 USD。跨币种金额不能直接相加。
+        alias: [币种, 货币, 结算币种]
+        sync: true
+
+      - name: contract_type
+        role: dimension
+        description: 合同性质，按人民币金额是否达到 70 万分为「一般合同」「大额合同」。
+        alias: [合同性质, 合同类型, 大额合同]
+        sync: true
+
+      - name: order_status
+        role: dimension
+        description: 合同状态，取值「生产中」「已完工」「已发货」「已取消」。
+        alias: [合同状态, 订单状态]
+        sync: true
+
+      - name: delay_days
+        role: measure
+        description: 合同延期天数 = 实际发货日期 - 承诺交期。正数表示延期，未发货的行是空值（求平均时自动跳过，不要用 0 代替）。
+        alias: [延期天数, 拖期天数, 交付延迟天数]
+        sync: false
+
+      - name: is_on_time
+        role: dimension
+        description: 该合同是否准时交付，取值「准时」「延期」。未发货时为空。
+        alias: [是否准时, 准时情况, 准时交付]
+        sync: true
+
+      - name: delay_reason
+        role: dimension
+        description: 交付延期原因，如「车间排产满」「工艺问题」「原材料到货延迟」「客户改单」「客户确认慢」「返工」。
+        alias: [延期原因, 拖期原因, 交付延期原因]
+        sync: true
+
+
+  - name: fact_order_item
+    role: fact
+    description: >
+      合同明细事实表，一行是合同下的一个产品。
+      一份合同可以有多行产品（一份合同常常就是主产品散热器 + 配件支承两行）。
+      ⚠️ 数"合同数"要用 fact_order（头表），不能用这张表 —— 用这张表会把多行合同数多。
+      这张表的金额按合同头的币种计价，所以**不能单独跨币种求和**。
+    columns:
+      - name: item_id
+        role: primary_key
+        description: 明细行号，主键。规则 <合同号>-<两位序号>。
+        alias: [明细行号, 明细ID]
+        sync: false
+
+      - name: order_id
+        role: foreign_key
+        description: 所属合同号，外键，关联 fact_order 表。
+        alias: [合同号, 订单号]
+        sync: false
+
+      - name: product_id
+        role: foreign_key
+        description: 品号，外键，关联 dim_product 表。
+        alias: [品号, 产品ID, 商品ID]
+        sync: false
+
+      - name: quantity
+        role: measure
+        description: 该行产品的合同数量（件）。一份合同的数量 = 它所有明细行 quantity 之和。
+        alias: [数量, 合同数量, 订购数量, 下单数量]
+        sync: false
+
+      - name: total_weight
+        role: measure
+        description: 该行产品的总重（公斤）= 只重 × 数量。
+        alias: [总重, 重量]
+        sync: false
+
+      - name: amount
+        role: measure
+        description: 该行产品的金额，按所属合同头的币种计价。合同金额 = SUM(该字段)。
+        alias: [金额, 合同金额, 明细金额]
+        sync: false
+
+
+  - name: fact_production
+    role: fact
+    description: >
+      生产指令事实表，一行是一个生产指令上的一个产品，记录计划数量、实际产量、
+      计划完工日期、实际完工日期和延期情况。
+      ★ 公司口径的「产量」看这张表的实际产量字段。
+      工序明细表会把同一批货重复算多次，两者不能相加、不能互相印证 —— 这是本模型
+      最重要的口径陷阱。只有成品会建生产指令，配件（支承/挂件/管配件/螺丝包/
+      温控器/电热绳/加热棒）是外购件，不进生产。
+    columns:
+      - name: production_id
+        role: primary_key
+        description: 生产指令号，主键。真实单据沿用合同单号，规则 <合同号>-<两位序号>。
+        alias: [生产指令号, 生产单号, 工单号]
+        sync: false
+
+      - name: order_id
+        role: foreign_key
+        description: 对应的销售合同号，外键，关联 fact_order 表。
+        alias: [合同号, 订单号, 对应合同]
+        sync: false
+
+      - name: product_id
+        role: foreign_key
+        description: 品号，外键，关联 dim_product 表。只会是成品，配件不建生产指令。
+        alias: [品号, 产品ID]
+        sync: false
+
+      - name: plan_quantity
+        role: measure
+        description: 计划生产数量（件），来自合同明细的数量。
+        alias: [计划数量, 计划生产数量, 计划产量]
+        sync: false
+
+      - name: output_quantity
+        role: measure
+        description: 实际产量（件），只有已完工的生产指令才有值。"公司总产量"就是 SUM(该字段)。
+        alias: [实际产量, 产量, 产出量, 完工数量]
+        sync: false
+
+      - name: plan_done_date_id
+        role: foreign_key
+        description: 计划完工日期，外键，关联 dim_date 表，对应单据上的"完工日期"栏。
+        alias: [计划完工日期, 排产完工日期]
+        sync: false
+
+      - name: actual_done_date_id
+        role: foreign_key
+        description: 实际完工日期，外键，关联 dim_date 表。未完工时为空。
+        alias: [实际完工日期, 完工日期]
+        sync: false
+
+      - name: delay_days
+        role: measure
+        description: 生产延期天数 = 实际完工日期 - 计划完工日期。未完工的行是空值。
+        alias: [生产延期天数, 生产拖期天数]
+        sync: false
+
+      - name: is_on_time
+        role: dimension
+        description: 生产是否准时，取值「准时」「延期」。未完工时为空。
+        alias: [生产是否准时, 生产准时情况]
+        sync: true
+
+      - name: delay_reason
+        role: dimension
+        description: 生产延期原因，如「车间排产满」「工艺问题」「原材料到货延迟」「客户改单」「客户确认慢」「返工」。
+        alias: [生产延期原因, 生产拖期原因]
+        sync: true
+
+
+  - name: fact_production_process
+    role: fact
+    description: >
+      工序明细事实表，一行是一个生产指令下的一道工序。
+      散热器的真实工艺路线是 5 道：机加工 → 制管 → 焊接 → 抛光｜喷塑 → 包装，
+      其中第 4 道二选一（不锈钢件走抛光、碳钢件走喷塑），所以不同产品用到的车间不一样。
+      不良数和不良类型挂在**这一层**，因为不良是在具体工序上产生的，而且能对上车间
+      （制管→毛刺/划伤，喷塑→电镀发黄/麻点/凹坑，焊接→缝隙过大/螺丝凸出，包装→生锈）。
+      ⚠️ 口径陷阱：同一批货会经过多道工序，所以加工数量跨工序相加会重复计数（一批货被算 5 次）。
+      「车间加工量」必须**按车间分组**看，不能和产量相加，跨车间求和无意义。
+    columns:
+      - name: process_id
+        role: primary_key
+        description: 工序行号，主键。规则 <生产指令号>-P<工序号>。
+        alias: [工序行号, 工序ID]
+        sync: false
+
+      - name: production_id
+        role: foreign_key
+        description: 所属生产指令号，外键，关联 fact_production 表。
+        alias: [生产指令号, 生产单号, 工单号]
+        sync: false
+
+      - name: workshop_id
+        role: foreign_key
+        description: 车间ID，外键，关联 dim_workshop 表，标识这道工序在哪个车间做。
+        alias: [车间ID, 车间编号]
+        sync: false
+
+      - name: process_seq
+        role: dimension
+        description: 工序顺序号：1 机加工 / 2 制管 / 3 焊接 / 4 抛光或喷塑 / 5 包装。
+        alias: [工序顺序, 工序号, 工序序号]
+        sync: false
+
+      - name: process_plan_quantity
+        role: measure
+        description: 该工序的计划加工数量（件）。
+        alias: [工序计划数量, 工序计划加工数]
+        sync: false
+
+      - name: process_output
+        role: measure
+        description: 该工序的实际加工数量（件）。"车间加工量"就是 SUM(该字段)，且必须按车间分组。
+        alias: [工序加工数量, 工序产出, 车间加工量, 工序产量]
+        sync: false
+
+      - name: defect_quantity
+        role: measure
+        description: 该工序产生的不良品数量（件）。不良率 = SUM(该字段) / SUM(工序加工数量)，是工序级口径。
+        alias: [不良数量, 不良品数量, 次品数量]
+        sync: false
+
+      - name: defect_type
+        role: dimension
+        description: 不良类型，如「生锈」「划伤」「毛刺」「凹坑」「麻点」「电镀发黄」「缝隙过大」「螺丝凸出」。
+        alias: [不良类型, 缺陷类型, 质量问题类型]
+        sync: true
+
+      - name: process_done_date_id
+        role: foreign_key
+        description: 该工序的完工日期，外键，关联 dim_date 表。
+        alias: [工序完工日期, 工序日期]
+        sync: false
+
+
+
+  - name: dim_customer
+    role: dim
+    description: >
+      客户维度表，存储客户档案。客户全部是经销商，没有个人客户，以海外经销商为主。
+      country / continent / trade_type 三个字段看起来冗余，是刻意的维表冗余：
+      维表就该"宽"，让分析师和生成 SQL 的模型少写 CASE WHEN。
+      客户等级按订单量分层（A/B/C，量大等级高），注意它是**派生**字段，
+      "按客户等级看订单量"会变成同义反复，这是真实数仓里的口径陷阱。
+    columns:
+      - name: customer_id
+        role: primary_key
+        description: 客户ID，主键。
+        alias: [客户ID, 客户编号]
+        sync: false
+
+      - name: customer_name
+        role: dimension
+        description: 客户名称（海外经销商公司名）。
+        alias: [客户名称, 客户名, 客户, 经销商名称]
+        sync: true
+
+      - name: country
+        role: dimension
+        description: 客户所在国家或地区，如 德国、荷兰、美国、中国香港。
+        alias: [国家, 所在国家, 国别, 地区]
+        sync: true
+
+      - name: continent
+        role: dimension
+        description: 所属洲，取值 欧洲 / 北美洲 / 大洋洲 / 亚洲。
+        alias: [洲, 大洲, 所属洲, 区域]
+        sync: true
+
+      - name: trade_type
+        role: dimension
+        description: 内外销，取值「内销」「出口」。出口是绝对主力，内销是少数。用它可以一行筛出出口业务，不必列出所有国家名。
+        alias: [内外销, 销售类型, 内销还是出口, 出口标志]
+        sync: true
+
+      - name: customer_level
+        role: dimension
+        description: 客户等级，按订单量分层，取值 A / B / C，量大的等级越高。这是派生字段。
+        alias: [客户等级, 客户级别, 客户分层]
+        sync: true
+
+      - name: customer_status
+        role: dimension
+        description: 客户状态，取值「新客户」「老客户」（2026 年之前下过单的算老客户）。
+        alias: [客户状态, 新老客户, 新客户还是老客户]
+        sync: true
+
+
+  - name: dim_product
+    role: dim
+    description: >
+      产品维度表，散热器业务线的产品档案，33 个品号全部来自真实单据。
+      两个分类字段是交叉关系，不是一个包含另一个：
+      加热方式（水热/电热）说的是怎么发热，产品类型（成品/配件）说的是是不是自己生产的散热器本体。
+      配件包含结构性零件（支承/挂件/管配件/螺丝包）和电器件（电热绳/电加热棒/温控器），
+      电器件的加热方式仍记为「电热」。
+      材质会影响表面处理走哪条工艺路线（不锈钢走抛光、碳钢走喷塑），所以和工序明细表是联动的。
+      注意：材质是按表面处理反推的，不是单据里的原始字段。
+    columns:
+      - name: product_id
+        role: primary_key
+        description: 品号，主键。真实格式如 R0222341T01。
+        alias: [品号, 产品ID, 产品编号, 物料编号]
+        sync: false
+
+      - name: product_name
+        role: dimension
+        description: 品名，如 水热散热器、树杈散热器、椭圆搭接散热器、单管不锈钢电散热器、支承。
+        alias: [品名, 产品名称, 产品名]
+        sync: true
+
+      - name: product_type
+        role: dimension
+        description: 产品类型，取值「成品」「配件」。成品是散热器本体，配件是外购的结构件和电器件。
+        alias: [产品类型, 成品还是配件, 产品分类, 品类]
+        sync: true
+
+      - name: heating_type
+        role: dimension
+        description: 加热方式，取值「水热」「电热」。结构性配件不适用，此列为空。
+        alias: [加热方式, 水热电热, 加热类型, 大类]
+        sync: true
+
+      - name: material
+        role: dimension
+        description: 材质，取值「不锈钢」「碳钢」。不锈钢件走抛光工序，碳钢件走喷塑工序。按表面处理反推，非单据原始字段。
+        alias: [材质, 材料, 不锈钢还是碳钢]
+        sync: true
+
+      - name: spec
+        role: dimension
+        description: 规格型号，如 1400*360/中心距为320。高基数字段，不参与值检索。
+        alias: [规格, 型号, 规格型号]
+        sync: false
+
+      - name: unit_weight
+        role: measure
+        description: 只重，即单件重量（公斤）。总重 = 只重 × 数量。
+        alias: [只重, 单重, 单件重量]
+        sync: false
+
+
+  - name: dim_employee
+    role: dim
+    description: >
+      员工维度表，全员档案。部门与角色名来自真实审批链。
+      事实表目前只引用「业务员」，但这里放的是全集（含销售内勤/技术员/生产质检等），
+      以后新增技术、质检相关的事实表时不用改建员工表。
+      ★ 问"各业务员的中标率排名"时**必须**加 employee_role = '业务员' 或
+      department = '业务部' 过滤，否则销售内勤也会被算进来。
+    columns:
+      - name: employee_id
+        role: primary_key
+        description: 员工ID，主键。
+        alias: [员工ID, 员工编号, 人员ID]
+        sync: false
+
+      - name: employee_name
+        role: dimension
+        description: 员工姓名。
+        alias: [员工姓名, 姓名, 业务员姓名, 人员姓名]
+        sync: true
+
+      - name: department
+        role: dimension
+        description: 所属部门，如 业务部、运营部-销售内勤科、技术部、采购部、生产部、财务部。
+        alias: [部门, 所属部门]
+        sync: true
+
+      - name: employee_role
+        role: dimension
+        description: 员工角色，如「业务员」「销售内勤」「技术员」「生产质检」。按业务员排名时要过滤这个字段。
+        alias: [角色, 岗位, 职位, 员工角色]
+        sync: true
+
+
+  - name: dim_workshop
+    role: dim
+    description: >
+      车间维度表，散热器工艺路线上的各道工序所在车间，共 6 个：
+      机加工 / 制管 / 焊接 / 抛光 / 喷塑 / 包装。
+      产品与车间是**多对多** —— 每款产品走自己的工艺路线，用到第 4 道时
+      不锈钢件去抛光、碳钢件去喷塑，所以每款产品用到的车间不完全一样。
+    columns:
+      - name: workshop_id
+        role: primary_key
+        description: 车间ID，主键。
+        alias: [车间ID, 车间编号]
+        sync: false
+
+      - name: workshop_name
+        role: dimension
+        description: 车间名称，取值 机加工 / 制管 / 焊接 / 抛光 / 喷塑 / 包装。
+        alias: [车间名称, 车间, 工序车间]
+        sync: true
+
+
+  - name: dim_date
+    role: dim
+    description: >
+      日期维度表，把日期ID展开为年、季度、月、日等多粒度时间维度，覆盖 2025-01-01 ~ 2026-12-31。
+      ★ 事实表里有多个日期列都指向这张表（合同表就有下单日期、承诺交期、实际发货日期三个），
+      需要同时用到多个日期时，**必须**给 dim_date 起不同的别名分别 JOIN，
+      否则 SQL 会有歧义或自连接错误。
+    columns:
+      - name: date_id
+        role: primary_key
+        description: 日期ID，主键，格式 YYYYMMDD 的整数（可以直接比较大小）。
+        alias: [日期ID, 日期编号]
+        sync: false
+
+      - name: year
+        role: dimension
+        description: 年份，如 2025、2026。
+        alias: [年份, 年]
+        sync: true
+
+      - name: quarter
+        role: dimension
+        description: 季度，取值是**字符串** Q1 / Q2 / Q3 / Q4（带字母 Q 的两个字符），不是数字 1~4。筛一季度必须写 quarter = 'Q1'；写成 quarter = 1 在 MySQL 里会拿 'Q1' 和 1 相比，结果恒为假，查不到任何数据。
+        alias: [季度, 季]
+        sync: true
+
+      - name: month
+        role: dimension
+        description: 月份，1 ~ 12。
+        alias: [月份, 月]
+        sync: true
+
+      - name: day
+        role: dimension
+        description: 日，1 ~ 31。
+        alias: [日, 天, 日期号]
+        sync: false
+
+
+metrics:
+
+
+  - name: 报价金额
+    description: >
+      所有报价单的报价金额合计，反映业务员往外报了多少量。
+      计算公式: SUM(fact_quotation.quote_amount)
+      ⚠️ 这是**报价**不是成交额，和「合同金额」是两个不同的指标，不能混。
+      另外金额按原币种记录，跨币种直接 SUM 没有意义，要按币种分组。
+    relevant_columns:
+      - fact_quotation.quote_amount
+    alias: [报价总额, 报价额, 报价合计]
+
+  - name: 中标率
+    description: >
+      报价转化率，中标单数占已结案报价单数的比例。
+      计算公式: 中标单数 / (中标单数 + 落标单数)
+      ⚠️ 分母**只算已结案**（中标 + 落标），不含还在跟的「跟进中」——
+      还在谈的单不该算作失败，这是真实业务口径。
+    relevant_columns:
+      - fact_quotation.quote_status
+      - fact_quotation.quotation_id
+    alias: [报价转化率, 成交率, 中标比例, 中标单占比]
+
+  - name: 样品单数
+    description: >
+      送样单的总数，反映有多少客户走到了打样这一步。
+      计算公式: COUNT(fact_sample.sample_id)
+    relevant_columns:
+      - fact_sample.sample_id
+    alias: [送样单数, 样品笔数, 打样单数]
+
+  - name: 样品转化率
+    description: >
+      样品转成正式合同的比例，衡量打样的有效性。
+      计算公式: 转成订单的样品单数（order_id 非空）/ 样品单总数
+    relevant_columns:
+      - fact_sample.order_id
+      - fact_sample.sample_id
+    alias: [样品转订单率, 打样转化率, 样品成单率]
+
+  - name: 合同金额
+    description: >
+      所有合同明细金额的合计，即销售额 / 订单金额 / 营收。
+      计算公式: SUM(fact_order_item.amount)
+      ⚠️ 金额挂在**明细表**上（合同头没有金额字段），而且按合同头的币种计价，
+      所以跨币种直接 SUM 没有意义，要按币种分组。
+    relevant_columns:
+      - fact_order_item.amount
+    alias: [销售额, 销售总额, 营收, 订单金额, 合同总额, 成交金额, 接单金额]
+
+  - name: 合同数
+    description: >
+      销售合同的**笔数**，即合同头表的记录数。
+      计算公式: COUNT(fact_order.order_id)
+      ⚠️ 数的是笔数不是件数（件数看「合同数量」）。
+      而且必须数合同头表 fact_order，不能数明细表 fact_order_item ——
+      一份合同可以有多行产品，数明细会把多行合同的笔数数多。
+      ⚠️⚠️ 当同一条 SQL 为了取「合同金额」「合同数量」这类**挂在明细表上的指标**
+      而 JOIN 了 fact_order_item 时，一份 3 行明细的合同会被 JOIN 成 3 行，
+      COUNT(fact_order.order_id) 数到的是**明细行数**（会被放大），
+      此时笔数必须写成 COUNT(DISTINCT fact_order.order_id)。
+      判断方法：SELECT 里只要同时出现「合同数」和明细表的聚合（SUM(金额)/SUM(数量)），
+      合同数那一项就必须带 DISTINCT。
+    relevant_columns:
+      - fact_order.order_id
+    alias: [合同笔数, 订单数, 订单笔数, 合同个数, 接单数]
+
+  - name: 合同数量
+    description: >
+      所有合同的**件数**合计，即卖出多少件产品。
+      计算公式: SUM(fact_order_item.quantity)
+      ⚠️ 这是件数不是笔数（笔数看「合同数」）。一份合同的数量 = 它所有明细行之和。
+    relevant_columns:
+      - fact_order_item.quantity
+    alias: [订单量, 合同件数, 订购数量, 下单数量]
+
+
+  - name: 合同交付及时率
+    description: >
+      已发货合同中准时交付的比例。
+      计算公式: 准时合同数（is_on_time='准时'）/ 已发货合同数（actual_ship_date_id 非空）
+      ⚠️ 分母只算**已发货**的合同。未发货的合同还没到评判的时候，
+      把它算进分母会把及时率莫名其妙拉低。
+    relevant_columns:
+      - fact_order.is_on_time
+      - fact_order.actual_ship_date_id
+      - fact_order.order_id
+    alias: [及时率, 准时交付率, 按期交付率, 交付及时率, 及时交货率, 准时交货率]
+
+  - name: 平均延期天数
+    description: >
+      已发货合同的平均延期天数，正数表示平均延期了多少天。
+      计算公式: AVG(fact_order.delay_days)
+      ⚠️ 延期天数是物理预计算列，**不要**自己去 DATEDIFF 实际发货和承诺交期。
+      未发货的合同该列为空，AVG 会自动跳过（这正是它设计成物理列的理由）。
+    relevant_columns:
+      - fact_order.delay_days
+    alias: [延期天数, 平均拖期, 交付延迟天数]
+
+  - name: 样品平均延期天数
+    description: >
+      已寄出样品的平均延期天数。
+      计算公式: AVG(fact_sample.delay_days)
+      未寄出的样品该列为空，AVG 会自动跳过。
+    relevant_columns:
+      - fact_sample.delay_days
+    alias: [样品延期天数, 样品平均拖期]
+
+
+  - name: 产量
+    description: >
+      公司口径的总产量，即已完工生产指令的产量合计。
+      计算公式: SUM(fact_production.output_quantity)
+      ⚠️ 这是**产品级**口径，一个产品只算一次。
+      不要用工序明细表的加工数量来算产量 —— 那会把同一批货按工序重复计 5 次。
+    relevant_columns:
+      - fact_production.output_quantity
+    alias: [总产量, 实际产量, 产出量, 生产数量]
+
+  - name: 产能达成率
+    description: >
+      实际产量占计划数量的比例，衡量生产计划的完成情况。
+      计算公式: SUM(fact_production.output_quantity) / SUM(fact_production.plan_quantity)
+      ⚠️ SQL 里必须**同时**出现 output_quantity 和 plan_quantity 两列，
+      只查产量是算不出达成率的。
+    relevant_columns:
+      - fact_production.output_quantity
+      - fact_production.plan_quantity
+    alias: [计划达成率, 生产达成率, 产能利用率]
+
+  - name: 车间加工量
+    description: >
+      各车间的工序加工数量合计，反映车间的加工负荷。
+      计算公式: SUM(fact_production_process.process_output)
+      ⚠️ 两个坑：
+      ① 必须**按车间分组**看，跨车间求和无意义（每个车间的量是各自的）。
+      ② 不能和「产量」相加，也不能拿它和产量互相印证 ——
+         同一批货会经过 5 道工序，这张表里被重复算了 5 次。
+    relevant_columns:
+      - fact_production_process.process_output
+    alias: [加工量, 工序加工量, 车间产出, 车间加工数量]
+
+  - name: 车间工序达成率
+    description: >
+      各车间的工序实际加工数占工序计划加工数的比例。
+      计算公式: SUM(fact_production_process.process_output)
+                / SUM(fact_production_process.process_plan_quantity)
+    relevant_columns:
+      - fact_production_process.process_output
+      - fact_production_process.process_plan_quantity
+    alias: [工序达成率, 车间达成率, 车间计划达成率]
+
+  - name: 不良率
+    description: >
+      工序级的不良品比例。
+      计算公式: SUM(fact_production_process.defect_quantity)
+                / SUM(fact_production_process.process_output)
+      ⚠️ 这是**工序级**口径（不良数挂在工序上），不是成品终检不良率。
+      同一批货会经过多道工序，所以分子分母都是跨工序累计的。
+    relevant_columns:
+      - fact_production_process.defect_quantity
+      - fact_production_process.process_output
+    alias: [次品率, 不合格率, 废品率, 缺陷率]
